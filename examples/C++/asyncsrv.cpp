@@ -25,13 +25,17 @@ public:
         : ctx_(1),
           client_socket_(ctx_, ZMQ_DEALER)
     {}
+    void SetClientID(std::string &s) {client_id_ = s;}
+    void SetClientID(const char *s) {client_id_ = std::string(s);}
 
     void start() {
         // generate random identity
         char identity[10] = {};
         sprintf(identity, "%04X-%04X", within(0x10000), within(0x10000));
         printf("%s\n", identity);
-        client_socket_.setsockopt(ZMQ_IDENTITY, identity, strlen(identity));
+        // client_socket_.setsockopt(ZMQ_IDENTITY, identity, strlen(identity));
+
+        client_socket_.setsockopt(ZMQ_IDENTITY, client_id_.c_str(), client_id_.size());
         client_socket_.connect("tcp://localhost:5570");
 
         zmq::pollitem_t items[] = {{client_socket_, 0, ZMQ_POLLIN, 0}};
@@ -42,7 +46,8 @@ public:
                     // 10 milliseconds
                     zmq::poll(items, 1, 10);
                     if (items[0].revents & ZMQ_POLLIN) {
-                        printf("\n%s ", identity);
+                        // printf("\n%s received as followings ", client_id_);
+                        std::cout << client_id_ << " received the message: " << "\n";
                         s_dump(client_socket_);
                     }
                 }
@@ -57,6 +62,7 @@ public:
 private:
     zmq::context_t ctx_;
     zmq::socket_t client_socket_;
+    std::string client_id_;
 };
 
 
@@ -66,10 +72,12 @@ private:
 
 class server_worker {
 public:
-    server_worker(zmq::context_t &ctx, int sock_type)
+    server_worker(zmq::context_t &ctx, int sock_type, const char *s)
         : ctx_(ctx),
-          worker_(ctx_, sock_type)
+          worker_(ctx_, sock_type),
+          worker_id_(std::string(s))
     {}
+    void SetWorkerID(const char *s) {worker_id_ = std::string(s);}
 
     void work() {
             worker_.connect("inproc://backend");
@@ -80,8 +88,13 @@ public:
                 zmq::message_t msg;
                 zmq::message_t copied_id;
                 zmq::message_t copied_msg;
-                worker_.recv(&identity);
-                worker_.recv(&msg);
+                // worker_.s_recv(&identity);
+                // worker_.recv(&msg);
+                //
+                std::string identity_s = s_recv(worker_);
+                std::string msg_s = s_recv(worker_);
+
+                std::cout << worker_id_ << " server worker received " << msg_s << " from " << identity_s << "\n";
 
                 int replies = within(5);
                 for (int reply = 0; reply < replies; ++reply) {
@@ -101,6 +114,7 @@ public:
 private:
     zmq::context_t &ctx_;
     zmq::socket_t worker_;
+    std::string worker_id_;
 };
 
 
@@ -129,7 +143,9 @@ public:
         std::vector<server_worker *> worker;
         std::vector<std::thread *> worker_thread;
         for (int i = 0; i < kMaxThread; ++i) {
-            worker.push_back(new server_worker(ctx_, ZMQ_DEALER));
+            char worker_id[10];
+            sprintf(worker_id, "worker%d", i);
+            worker.push_back(new server_worker(ctx_, ZMQ_DEALER, worker_id));
 
             worker_thread.push_back(new std::thread(std::bind(&server_worker::work, worker[i])));
             worker_thread[i]->detach();
@@ -160,9 +176,9 @@ private:
 
 int main (void)
 {
-    client_task ct1;
-    client_task ct2;
-    client_task ct3;
+    client_task ct1; ct1.SetClientID("client1");
+    client_task ct2; ct2.SetClientID("client2");
+    client_task ct3; ct3.SetClientID("client3");
     server_task st;
 
     std::thread t1(std::bind(&client_task::start, &ct1));
