@@ -40,20 +40,29 @@ public:
 
         zmq::pollitem_t items[] = {{client_socket_, 0, ZMQ_POLLIN, 0}};
         int request_nbr = 0;
+        int cnt = 0;
         try {
             while (true) {
-                for (int i = 0; i < 100; ++i) {
-                    // 10 milliseconds
-                    zmq::poll(items, 1, 10);
-                    if (items[0].revents & ZMQ_POLLIN) {
-                        // printf("\n%s received as followings ", client_id_);
-                        std::cout << client_id_ << " received the message: " << "\n";
-                        s_dump(client_socket_);
-                    }
-                }
-                char request_string[16] = {};
-                sprintf(request_string, "request #%d", ++request_nbr);
-                client_socket_.send(request_string, strlen(request_string));
+                /*
+                 * for (int i = 0; i < 100; ++i) {
+                 *     // 10 milliseconds
+                 *     zmq::poll(items, 1, 10);
+                 *     if (items[0].revents & ZMQ_POLLIN) {
+                 *         // printf("\n%s received as followings ", client_id_);
+                 *         std::cout << client_id_ << " received the message: " << "\n";
+                 *         s_dump(client_socket_);
+                 *     }
+                 * }
+                 */
+                // char request_string[16] = {};
+                // sprintf(request_string, "request # %d", ++request_nbr);
+                // client_socket_.send(request_string, strlen(request_string));
+                std::string mystr = "randommsg";
+                s_send(client_socket_, mystr);
+                cnt++;
+                std::cout << cnt++ << "\n";
+                // s_sleep(100);
+
             }
         }
         catch (std::exception &e) {}
@@ -94,15 +103,15 @@ public:
                 std::string identity_s = s_recv(worker_);
                 std::string msg_s = s_recv(worker_);
 
-                std::cout << worker_id_ << " server worker received " << msg_s << " from " << identity_s << "\n";
+                std::cout << "\n" << worker_id_ << " server worker received " << msg_s << " from " << identity_s << "\n";
 
                 int replies = within(5);
                 for (int reply = 0; reply < replies; ++reply) {
-                    s_sleep(within(1000) + 1);
+                    // s_sleep(within(1000) + 1);
                     copied_id.copy(&identity);
                     copied_msg.copy(&msg);
-                    worker_.send(copied_id, ZMQ_SNDMORE);
-                    worker_.send(copied_msg);
+                    // worker_.send(copied_id, ZMQ_SNDMORE);
+                    // worker_.send(copied_msg);
                 }
             }
         }
@@ -130,7 +139,7 @@ class server_task {
 public:
     server_task()
         : ctx_(1),
-          frontend_(ctx_, ZMQ_ROUTER),
+          frontend_(ctx_, ZMQ_DEALER),
           backend_(ctx_, ZMQ_DEALER)
     {}
 
@@ -140,27 +149,33 @@ public:
         frontend_.bind("tcp://*:5570");
         backend_.bind("inproc://backend");
 
-        std::vector<server_worker *> worker;
-        std::vector<std::thread *> worker_thread;
-        for (int i = 0; i < kMaxThread; ++i) {
-            char worker_id[10];
-            sprintf(worker_id, "worker%d", i);
-            worker.push_back(new server_worker(ctx_, ZMQ_DEALER, worker_id));
-
-            worker_thread.push_back(new std::thread(std::bind(&server_worker::work, worker[i])));
-            worker_thread[i]->detach();
+        while(1) {
+        
+            std::string s = s_recv(frontend_);
+            std::cout << "Received from client: " << s << "\n";
         }
 
+        // std::vector<server_worker *> worker;
+        // std::vector<std::thread *> worker_thread;
+        // for (int i = 0; i < kMaxThread; ++i) {
+            // char worker_id[10];
+            // sprintf(worker_id, "worker%d", i);
+            // worker.push_back(new server_worker(ctx_, ZMQ_DEALER, worker_id));
 
-        try {
-            zmq::proxy(frontend_, backend_, nullptr);
-        }
-        catch (std::exception &e) {}
+            // worker_thread.push_back(new std::thread(std::bind(&server_worker::work, worker[i])));
+            // worker_thread[i]->detach();
+        // }
 
-        for (int i = 0; i < kMaxThread; ++i) {
-            delete worker[i];
-            delete worker_thread[i];
-        }
+
+        // try {
+            // zmq::proxy(frontend_, backend_, nullptr);
+        // }
+        // catch (std::exception &e) {}
+
+        // for (int i = 0; i < kMaxThread; ++i) {
+            // delete worker[i];
+            // delete worker_thread[i];
+        // }
     }
 
 
@@ -177,18 +192,19 @@ private:
 int main (void)
 {
     client_task ct1; ct1.SetClientID("client1");
-    client_task ct2; ct2.SetClientID("client2");
-    client_task ct3; ct3.SetClientID("client3");
+    // client_task ct2; ct2.SetClientID("client2");
+    // client_task ct3; ct3.SetClientID("client3");
     server_task st;
 
     std::thread t1(std::bind(&client_task::start, &ct1));
-    std::thread t2(std::bind(&client_task::start, &ct2));
-    std::thread t3(std::bind(&client_task::start, &ct3));
+    // std::thread t2(std::bind(&client_task::start, &ct2));
+    // std::thread t3(std::bind(&client_task::start, &ct3));
+ 
     std::thread t4(std::bind(&server_task::run, &st));
 
     t1.detach();
-    t2.detach();
-    t3.detach();
+    // t2.detach();
+    // t3.detach();
     t4.detach();
 
     getchar();
